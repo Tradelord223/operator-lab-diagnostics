@@ -6,6 +6,15 @@ Zero-dependency Python (`stdlib`-only) diagnostic toolkit & sovereign Solana Pay
 
 ---
 
+## Live Proof-of-Work Video Walkthroughs
+
+Real unmocked live-API & mainnet terminal audits published on **[Operator Lab (`@operatorlab-quant`)](https://www.youtube.com/@operatorlab-quant)**:
+
+- **Video 1 — Kalshi V2 Quote-Dust, Quadratic Fees & AWC Synoptic Guard:** [`https://youtu.be/CX490Tn6oMs`](https://youtu.be/CX490Tn6oMs)
+- **Video 2 — PumpSwap v2 Signed `i128` `virtual_quote_reserves` & Token-2022 Firewall:** [`https://youtu.be/q5tlnoLlKfo`](https://youtu.be/q5tlnoLlKfo)
+
+---
+
 ## Why This Exists (Live Empirical Benchmarks)
 
 Most retail trading bots fail on Day 1 because public tutorials ignore live late-2026 venue mechanics verified by this tool:
