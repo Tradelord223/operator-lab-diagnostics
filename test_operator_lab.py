@@ -38,6 +38,7 @@ from solana_pay_gate import (  # noqa: E402
     DEFAULT_MERCHANT_WALLET,
     PUBLIC_REPO_URL,
     WURK_ESCROW_URL,
+    WURK_PATCH_349_URL,
     WURK_SPRINT_1250_URL,
     _build_gemini_decision_payload,
     _build_openai_decision_payload,
@@ -332,7 +333,15 @@ class TestSolanaPayGate(unittest.TestCase):
         self.assertGreater(ue["users_per_200_usd_credit"], 1500)
 
         prev = run_preview()
-        self.assertEqual(len(prev["sample_invoices"]), 4)
+        self.assertEqual(len(prev["sample_invoices"]), 5)
+
+        patch = route_customer_message(
+            "Ready to buy the $349 single-adapter bug-fix PR right now", live=False
+        )
+        self.assertEqual(patch.tier_fit, "patch_349")
+        self.assertEqual(patch.action, "ISSUE_SOLANA_PAY_INVOICE:patch_349")
+        self.assertIn("amount=349", patch.invoice_uri or "")
+        self.assertIn(WURK_PATCH_349_URL, patch.reply_template)
 
         sprint = route_customer_message(
             "Ready to buy the $1250 48-hour remediation CI sprint right now", live=False
@@ -411,9 +420,11 @@ class TestSolanaPayGate(unittest.TestCase):
         prompt = build_grounded_system_prompt(inv)
         self.assertIn("$89.00", prompt)
         self.assertIn("$149.00", prompt)
+        self.assertIn("$349.00", prompt)
         self.assertIn("$399.00", prompt)
         self.assertIn("$1,250.00", prompt)
         self.assertIn(WURK_ESCROW_URL, prompt)
+        self.assertIn(WURK_PATCH_349_URL, prompt)
         self.assertIn(WURK_SPRINT_1250_URL, prompt)
         self.assertIn(PUBLIC_REPO_URL, prompt)
         self.assertIn(inv["solana_pay_uri"], prompt)

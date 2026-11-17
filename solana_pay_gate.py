@@ -42,6 +42,7 @@ except ImportError:
 DEFAULT_MERCHANT_WALLET = "4iANuArANM9HzZchytLKeUBzJMws8TEkogtFtZFLGyAj"
 DEFAULT_STATE_PATH = Path.home() / ".operator_lab" / "invoices.json"
 WURK_ESCROW_URL = "https://wurk.fun/store/9f5e5ca6-0439-4b10-a006-afb82a586ce0"
+WURK_PATCH_349_URL = "https://wurk.fun/store/de4c3b5b-e617-4304-bcac-3c3436b620ae"
 WURK_SPRINT_1250_URL = "https://wurk.fun/store/49f53566-1ff4-47ad-aac9-d999fa85d6f0"
 PUBLIC_REPO_URL = "https://github.com/Tradelord223/operator-lab-diagnostics"
 USDC_DECIMALS = 6
@@ -59,6 +60,12 @@ SKUS: dict[str, dict[str, Any]] = {
         "title": "B2B Custom Bot / Pre-Deploy Audit",
         "price_usdc": "149.00",
         "expected_micro_usdc": 149_000_000,
+    },
+    "patch_349": {
+        "sku": "patch_349",
+        "title": "24-Hour Single-Adapter Production Bug-Fix PR & Regression CI Test",
+        "price_usdc": "349.00",
+        "expected_micro_usdc": 349_000_000,
     },
     "vip": {
         "sku": "vip",
@@ -405,6 +412,7 @@ DECISION_RUBRICS: dict[str, dict[str, Any]] = {
             "free_diag": "Wants free diagnostic CLI or general info",
             "core_89": "Wants $89 Core Operator Suite",
             "b2b_149": "Wants $149 B2B Custom Module or Pre-Deploy Audit",
+            "patch_349": "Wants $349 24-Hour Single-Adapter Production Bug-Fix PR & Regression CI Test",
             "vip_399": "Wants $399 VIP Custom Bot + Full Invariant Suite",
             "sprint_1250": "Wants $1,250 48-Hour Production Bug-Fix & Stateful Invariant CI Sprint",
             "support_only": "Existing technical support or tx inquiry",
@@ -560,6 +568,8 @@ def _offline_rubric_classify(user_msg: str) -> dict[str, Any]:
 
     if any(k in low for k in ("1250", "1,250", "remediation", "ci sprint", "48h sprint", "48-hour")):
         tier_fit = "sprint_1250"
+    elif any(k in low for k in ("349", "patch_349", "single-adapter", "single adapter", "bug-fix pr", "bug fix pr")):
+        tier_fit = "patch_349"
     elif any(k in low for k in ("vip", "399", "custom bot", "invariant", "bespoke")):
         tier_fit = "vip_399"
     elif any(k in low for k in ("audit", "149", "pre-deploy", "b2b")):
@@ -583,7 +593,7 @@ def _offline_rubric_classify(user_msg: str) -> dict[str, Any]:
         objection = "none"
 
     intent = 0 if prompt_injection else 1
-    if tier_fit in ("core_89", "b2b_149", "vip_399", "sprint_1250"):
+    if tier_fit in ("core_89", "b2b_149", "patch_349", "vip_399", "sprint_1250"):
         intent = 4 if any(k in low for k in ("buy", "pay", "invoice", "link", "ready", "need")) else 3
     if any(k in low for k in ("send invoice", "solana pay", "pay now", "checkout")):
         intent = 5
@@ -630,11 +640,13 @@ def build_grounded_system_prompt(invoice_info: dict[str, Any] | None = None) -> 
         "You are the Operator Lab Support & Solutions Engineer. Be concise, technical, and factual.",
         f"Public Repo (Free Proof CLI): {PUBLIC_REPO_URL}",
         f"WURK Escrow ($149 B2B Sprint): {WURK_ESCROW_URL}",
+        f"WURK Escrow ($349 24h Single-Adapter Bug-Fix PR): {WURK_PATCH_349_URL}",
         f"WURK Escrow ($1,250 48h Remediation CI Sprint): {WURK_SPRINT_1250_URL}",
         f"Solana Mainnet Treasury: {DEFAULT_MERCHANT_WALLET} (SPL USDC Mint: {USDC_MINT}, 0.00% fee, <1s finality, 0-day hold)",
         "Active SKUs:",
         f"- core ($89.00 USDC): {SKUS['core']['title']} (Kalshi V2 Maker/Synoptic + Pre-Sign Solana Firewall)",
         f"- b2b_audit ($149.00 USDC): {SKUS['b2b_audit']['title']} (<24h runnable Foundry/Anchor/Python proof; free 12h fix or refund guarantee)",
+        f"- patch_349 ($349.00 USDC): {SKUS['patch_349']['title']} (Kalshi V2 / PumpSwap v2 / Token-2022 / x402 PR + runnable regression CI test in 24h; free 12h fix or cancel escrow)",
         f"- vip ($399.00 USDC): {SKUS['vip']['title']} (custom execution bot + full stateful invariant suite)",
         f"- sprint_1250 ($1,250.00 USDC): {SKUS['sprint_1250']['title']} (48h done-for-you production bug remediation + stateful invariant CI suite)",
         "Always include exact clickable links/URIs relevant to the user's request; never invent discounts or unreleased features.",
@@ -761,16 +773,21 @@ def route_customer_message(
     if rubrics["billing_escalation"]:
         action = "VERIFY_SOLANA_PAY_REFERENCE"
         default_reply = "Paste your invoice_id and transaction signature; verifying finality on Solana mainnet (<5s)."
-    elif int(rubrics["buyer_intent"]) >= 4 and rubrics["tier_fit"] in ("core_89", "b2b_149", "vip_399", "sprint_1250"):
+    elif int(rubrics["buyer_intent"]) >= 4 and rubrics["tier_fit"] in ("core_89", "b2b_149", "patch_349", "vip_399", "sprint_1250"):
         sku_key = {
             "core_89": "core",
             "b2b_149": "b2b_audit",
+            "patch_349": "patch_349",
             "vip_399": "vip",
             "sprint_1250": "sprint_1250",
         }[rubrics["tier_fit"]]
         issued_invoice = create_invoice(sku_key, buyer_ref="router", state_path=invoice_state_path)
         action = f"ISSUE_SOLANA_PAY_INVOICE:{sku_key}"
-        wurk_map = {"b2b_audit": WURK_ESCROW_URL, "sprint_1250": WURK_SPRINT_1250_URL}
+        wurk_map = {
+            "b2b_audit": WURK_ESCROW_URL,
+            "patch_349": WURK_PATCH_349_URL,
+            "sprint_1250": WURK_SPRINT_1250_URL,
+        }
         wurk_note = f" | WURK Escrow: {wurk_map[sku_key]}" if sku_key in wurk_map else ""
         default_reply = (
             f"Solana Pay USDC invoice {issued_invoice['invoice_id']} (${SKUS[sku_key]['price_usdc']} USDC, "
@@ -838,7 +855,7 @@ def run_preview() -> dict[str, Any]:
     """Non-mutating preview for terminal demonstrations and verification."""
     samples = [
         create_invoice(sku, buyer_ref="demo", state_path=None)
-        for sku in ("core", "b2b_audit", "vip", "sprint_1250")
+        for sku in ("core", "b2b_audit", "patch_349", "vip", "sprint_1250")
     ]
     route_demo = route_customer_message(
         "I want to buy the $149 pre-deploy audit; do you take USDC without Stripe 14-day holds?",
