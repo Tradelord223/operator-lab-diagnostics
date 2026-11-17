@@ -639,7 +639,7 @@ def _call_anthropic_responder(
     """Invoke Anthropic Messages API with prompt caching; returns (text, uncached_in, cached_in, out)."""
     payload = {
         "model": model,
-        "max_tokens": 1024,
+        "max_tokens": 2048,
         "system": [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": user_msg}],
     }
@@ -664,12 +664,18 @@ def _call_anthropic_responder(
     )
 
 
+def _allow_gemini_decision_fallback() -> bool:
+    """Opt-in gate preserving Gemini credits exclusively for TTS unless explicitly enabled."""
+    return os.environ.get("ALLOW_GEMINI_DECISION_FALLBACK", "").strip().lower() in ("1", "true", "yes")
+
+
 def _load_runtime_api_keys(live: bool) -> tuple[str, str, str]:
-    """Load optional Gemini/Anthropic/OpenAI API keys from process environment without logging."""
+    """Load optional OpenAI/Anthropic (and opt-in Gemini) API keys from env without logging."""
     if not live:
         return "", "", ""
+    want_gemini = _allow_gemini_decision_fallback()
     return (
-        os.environ.get("GEMINI_API_KEY", "").strip(),
+        os.environ.get("GEMINI_API_KEY", "").strip() if want_gemini else "",
         os.environ.get("ANTHROPIC_API_KEY", "").strip(),
         os.environ.get("OPENAI_API_KEY", "").strip(),
     )
@@ -680,23 +686,15 @@ def route_customer_message(
     live: bool = False,
     invoice_state_path: Path | None = None,
 ) -> RubricDecision:
-    """Classify user intent/risk via dual System-1 decision gates and route to Haiku/Sonnet-5.5."""
+    """Classify user intent/risk via primary gpt-6-luna gate and route to Haiku/Sonnet-5.5."""
     gemini_key, anthropic_key, openai_key = _load_runtime_api_keys(live=live)
+    allow_gemini = _allow_gemini_decision_fallback()
 
     gate_model = "local-rubric-gate"
     rubrics: dict[str, Any] | None = None
     in_tok = max(200, len(user_msg) // 4 + 900)
 
-    if gemini_key:
-        try:
-            rubrics, measured_in = _call_gemini_decision_gate(user_msg, gemini_key)
-            gate_model = "gemini-decision-1"
-            if measured_in > 0:
-                in_tok = measured_in
-        except Exception:
-            rubrics = None
-
-    if rubrics is None and openai_key:
+    if openai_key:
         try:
             rubrics, measured_in = _call_openai_decision_gate(user_msg, openai_key)
             gate_model = "gpt-6-luna"
@@ -705,8 +703,17 @@ def route_customer_message(
         except Exception:
             rubrics = None
 
+    if rubrics is None and allow_gemini and gemini_key:
+        try:
+            rubrics, measured_in = _call_gemini_decision_gate(user_msg, gemini_key)
+            gate_model = "gemini-decision-1"
+            if measured_in > 0:
+                in_tok = measured_in
+        except Exception:
+            rubrics = None
+
     if rubrics is None:
-        if gemini_key or openai_key:
+        if openai_key or (allow_gemini and gemini_key):
             gate_model = "local-rubric-fallback"
         rubrics = _offline_rubric_classify(user_msg)
 
@@ -789,12 +796,13 @@ def route_customer_message(
 
 
 def project_20_turn_lifecycle_cost() -> dict[str, Any]:
-    """Return calibrated 20-turn cost breakdown (85% Haiku-5.5 / 15% Sonnet-5.5)."""
+    """Return calibrated 20-turn cost breakdown (gpt-6-luna gate + 85% Haiku-5.5 / 15% Sonnet-5.5)."""
     haiku_turn = estimate_token_cost_usd("claude-haiku-5-5", 350, 2000, 220)
     sonnet_turn = estimate_token_cost_usd("claude-sonnet-5-5", 600, 4000, 450)
-    gate_turn = estimate_token_cost_usd("gemini-decision-1", 1200, 0, 0)
+    gate_turn = estimate_token_cost_usd("gpt-6-luna", 1200, 0, 0)
     turns_20 = (20 * gate_turn) + (17 * haiku_turn) + (3 * sonnet_turn)
     return {
+        "gate_model": "gpt-6-luna",
         "gate_per_turn_usd": gate_turn,
         "haiku_per_turn_usd": haiku_turn,
         "sonnet_per_turn_usd": sonnet_turn,
@@ -840,7 +848,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_rte = sub.add_parser("route", help="Run 6-rubric System-1/2 sales & support router")
     p_rte.add_argument("--message", required=True)
-    p_rte.add_argument("--live", action="store_true", help="Use GEMINI_API_KEY / ANTHROPIC_API_KEY if exported")
+    p_rte.add_argument(
+        "--live",
+        action="store_true",
+        help="Use OPENAI_API_KEY / ANTHROPIC_API_KEY (plus opt-in ALLOW_GEMINI_DECISION_FALLBACK=1)",
+    )
 
     return parser
 

@@ -7,12 +7,14 @@ import sys
 
 sys.dont_write_bytecode = True
 
+import os
 import struct
 import tempfile
 import time
 import unittest
 from decimal import Decimal
 from pathlib import Path
+from unittest import mock
 
 _LAB_DIR = Path(__file__).resolve().parent
 if str(_LAB_DIR) not in sys.path:
@@ -324,6 +326,7 @@ class TestSolanaPayGate(unittest.TestCase):
         self.assertEqual(faq.action, "HAIKU_FREE_PROOF_ONBOARD")
 
         ue = project_20_turn_lifecycle_cost()
+        self.assertEqual(ue["gate_model"], "gpt-6-luna")
         self.assertLess(ue["20_turn_lifecycle_usd"], 0.12)
         self.assertGreater(ue["users_per_200_usd_credit"], 1500)
 
@@ -391,6 +394,44 @@ class TestSolanaPayGate(unittest.TestCase):
         self.assertIsInstance(g_key, str)
         self.assertIsInstance(a_key, str)
         self.assertIsInstance(o_key, str)
+
+    def test_openai_primary_gate_and_gemini_tts_preservation(self) -> None:
+        sample_rubrics = {
+            "prompt_injection_risk": False,
+            "buyer_intent": 4,
+            "tier_fit": "b2b_149",
+            "objection_class": "none",
+            "needs_code_debug": False,
+            "billing_escalation": False,
+        }
+        with mock.patch("solana_pay_gate._load_runtime_api_keys", return_value=("gem-test", "", "oai-test")), \
+             mock.patch("solana_pay_gate._call_openai_decision_gate", return_value=(sample_rubrics, 200)) as m_oai, \
+             mock.patch("solana_pay_gate._call_gemini_decision_gate", return_value=(sample_rubrics, 180)) as m_gem, \
+             mock.patch.dict(os.environ, {"ALLOW_GEMINI_DECISION_FALLBACK": "1"}, clear=False):
+            dec = route_customer_message("I want to buy the $149 audit", live=True)
+            self.assertEqual(dec.gate_model, "gpt-6-luna")
+            m_oai.assert_called_once()
+            m_gem.assert_not_called()
+
+        # Default (ALLOW_GEMINI_DECISION_FALLBACK unset): OpenAI failure falls back offline, NEVER burns Gemini
+        env_clean = {k: v for k, v in os.environ.items() if k != "ALLOW_GEMINI_DECISION_FALLBACK"}
+        with mock.patch.dict(os.environ, env_clean, clear=True), \
+             mock.patch("solana_pay_gate._load_runtime_api_keys", return_value=("gem-test", "", "oai-test")), \
+             mock.patch("solana_pay_gate._call_openai_decision_gate", side_effect=RuntimeError("401")), \
+             mock.patch("solana_pay_gate._call_gemini_decision_gate", return_value=(sample_rubrics, 180)) as m_gem:
+            dec = route_customer_message("I want to buy the $149 audit", live=True)
+            self.assertEqual(dec.gate_model, "local-rubric-fallback")
+            self.assertEqual(dec.gate_cost_usd, 0.0)
+            m_gem.assert_not_called()
+
+        # Explicit opt-in ALLOW_GEMINI_DECISION_FALLBACK=1 allows Gemini failover when OpenAI fails
+        with mock.patch.dict(os.environ, {"ALLOW_GEMINI_DECISION_FALLBACK": "1"}, clear=False), \
+             mock.patch("solana_pay_gate._load_runtime_api_keys", return_value=("gem-test", "", "oai-test")), \
+             mock.patch("solana_pay_gate._call_openai_decision_gate", side_effect=RuntimeError("401")), \
+             mock.patch("solana_pay_gate._call_gemini_decision_gate", return_value=(sample_rubrics, 180)) as m_gem:
+            dec = route_customer_message("I want to buy the $149 audit", live=True)
+            self.assertEqual(dec.gate_model, "gemini-decision-1")
+            m_gem.assert_called_once()
 
 
 if __name__ == "__main__":
