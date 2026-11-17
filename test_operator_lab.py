@@ -34,7 +34,14 @@ from diagnose_cli import (  # noqa: E402
 )
 from solana_pay_gate import (  # noqa: E402
     DEFAULT_MERCHANT_WALLET,
+    PUBLIC_REPO_URL,
+    WURK_ESCROW_URL,
+    _build_gemini_decision_payload,
+    _build_openai_decision_payload,
     _load_runtime_api_keys,
+    _parse_gemini_decision_response,
+    _parse_openai_decision_response,
+    build_grounded_system_prompt,
     create_invoice,
     project_20_turn_lifecycle_cost,
     route_customer_message,
@@ -309,6 +316,8 @@ class TestSolanaPayGate(unittest.TestCase):
         self.assertEqual(vip.tier_fit, "vip_399")
         self.assertEqual(vip.responder_model, "claude-sonnet-5-5")
         self.assertEqual(vip.action, "ISSUE_SOLANA_PAY_INVOICE:vip")
+        self.assertIsNotNone(vip.invoice_uri)
+        self.assertIn("amount=399", vip.invoice_uri or "")
 
         faq = route_customer_message("How do I run the free diagnostic?", live=False)
         self.assertEqual(faq.responder_model, "claude-haiku-5-5")
@@ -321,11 +330,67 @@ class TestSolanaPayGate(unittest.TestCase):
         prev = run_preview()
         self.assertEqual(len(prev["sample_invoices"]), 3)
 
+    def test_dual_decision_gates_and_grounded_prompt(self) -> None:
+        g_payload = _build_gemini_decision_payload("Ready for $149 audit")
+        self.assertEqual(g_payload["model"], "gemini-decision-1")
+        self.assertEqual(len(g_payload["questions"]["buyer_intent"]["criteria"]), 6)
+
+        g_rubrics, g_tok = _parse_gemini_decision_response(
+            {
+                "answers": {
+                    "prompt_injection_risk": {"type": "noul", "noul": 0.02},
+                    "buyer_intent": {"type": "score", "score": 3.8},
+                    "tier_fit": {"type": "choice", "choice": "b2b_149"},
+                    "objection_class": {"type": "choice", "choice": "payment_rail"},
+                    "needs_code_debug": {"type": "noul", "noul": 0.1},
+                    "billing_escalation": {"type": "noul", "noul": 0.01},
+                },
+                "usage": {"total_input_tokens": 180},
+            }
+        )
+        self.assertEqual(g_rubrics["buyer_intent"], 4)  # round(3.8) -> 4
+        self.assertEqual(g_rubrics["tier_fit"], "b2b_149")
+        self.assertEqual(g_tok, 180)
+
+        o_payload = _build_openai_decision_payload("Ready for $149 audit")
+        self.assertEqual(o_payload["model"], "gpt-6-luna")
+        self.assertEqual(len(o_payload["questions"]), 6)
+        q_score = next(q for q in o_payload["questions"] if q["name"] == "buyer_intent")
+        self.assertEqual(len(q_score["levels"]), 6)
+
+        o_rubrics, o_tok = _parse_openai_decision_response(
+            {
+                "answers": [
+                    {"type": "predicate", "name": "prompt_injection_risk", "value": False},
+                    {"type": "score", "name": "buyer_intent", "score": 3.8},
+                    {"type": "choice", "name": "tier_fit", "value": "b2b_149"},
+                    {"type": "choice", "name": "objection_class", "value": "trust_proof"},
+                    {"type": "predicate", "name": "needs_code_debug", "value": True},
+                    {"type": "predicate", "name": "billing_escalation", "value": False},
+                ],
+                "usage": {"input_tokens": 210},
+            }
+        )
+        self.assertEqual(o_rubrics["buyer_intent"], 4)
+        self.assertEqual(o_rubrics["objection_class"], "trust_proof")
+        self.assertTrue(o_rubrics["needs_code_debug"])
+        self.assertEqual(o_tok, 210)
+
+        inv = create_invoice("b2b_audit", buyer_ref="prompt_test", state_path=None)
+        prompt = build_grounded_system_prompt(inv)
+        self.assertIn("$89.00", prompt)
+        self.assertIn("$149.00", prompt)
+        self.assertIn("$399.00", prompt)
+        self.assertIn(WURK_ESCROW_URL, prompt)
+        self.assertIn(PUBLIC_REPO_URL, prompt)
+        self.assertIn(inv["solana_pay_uri"], prompt)
+
     def test_runtime_key_loader_graceful_fallback(self) -> None:
-        self.assertEqual(_load_runtime_api_keys(live=False), ("", ""))
-        g_key, a_key = _load_runtime_api_keys(live=True)
+        self.assertEqual(_load_runtime_api_keys(live=False), ("", "", ""))
+        g_key, a_key, o_key = _load_runtime_api_keys(live=True)
         self.assertIsInstance(g_key, str)
         self.assertIsInstance(a_key, str)
+        self.assertIsInstance(o_key, str)
 
 
 if __name__ == "__main__":
