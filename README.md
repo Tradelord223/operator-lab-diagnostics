@@ -1,8 +1,23 @@
-# Operator Lab Diagnostics — Kalshi V2 & PumpSwap v2 Proof-of-Work CLI
+# Operator Lab Diagnostics — Kalshi V2, PumpSwap v2 & `x402` Security CLI
 
-Zero-dependency Python (`stdlib`-only) diagnostic toolkit & sovereign Solana Pay `USDC` checkout verifier built for live prediction-market and Solana DeFi execution engineering.
+Zero-dependency Python (`stdlib`-only) diagnostic toolkit & sovereign Solana Pay `USDC` checkout verifier built for live prediction-market, Solana DeFi, and `x402` payment infrastructure engineering.
 
-> **Read-Only Safety:** `diagnose_cli.py` requires **zero private keys**, **zero API secrets**, and executes **zero order/swap mutations**. Verify any orderbook or PumpSwap pool locally before risking `$1`.
+> **Read-Only Safety:** `diagnose_cli.py` requires **zero private keys**, **zero API secrets**, and executes **zero order/swap mutations**. Verify any orderbook, PumpSwap pool, `x402` facilitator config, or Token-2022 mint locally before risking `$1`.
+
+---
+
+## Production Remediation & Escrow Tiers (Instant `USDC` Settlement)
+
+Bypass 7–14 day card holds and custody freezes. All paid tiers settle directly via **WURK Escrow** (`wurk.fun/store` — `solguard_ops`, `x402` `USDC` on Solana/Base) or **0%-fee Solana Pay `USDC`** (`~400ms` finality):
+
+| Tier | Price (`USDC`) | What You Receive | Settlement Rail |
+| :--- | :--- | :--- | :--- |
+| **Free Proof Diagnostic** | **`$0`** | Read-only `diagnose_cli.py` (`kalshi-scan`, `pumpswap-check`, `x402-audit`) + `test_operator_lab.py` (MIT) | Public GitHub |
+| **24-Hour Single-Adapter Bug-Fix PR & CI Test** | **`$349 USDC`** | Targeted production bug-fix PR + runnable regression CI test (`Kalshi V2` / `PumpSwap v2` / `Token-2022` / `x402`) in `<=24h` (free 12h fix or cancel unapproved WURK escrow if tests fail) | [WURK Store Escrow (`de4c3b5b`)](https://wurk.fun/store/de4c3b5b-e617-4304-bcac-3c3436b620ae) or Direct Solana Pay `USDC` |
+| **48-Hour Multi-Module Production Bug-Fix & Invariant CI Sprint** | **`$1,250 USDC`** | Done-for-you multi-module protocol/bot remediation (`Kalshi V2` / `PumpSwap i128` / `Token-2022` / `x402`) + runnable stateful Foundry/Anchor/Python invariant CI suite in `<=48h` | [WURK Store Escrow (`49f53566`)](https://wurk.fun/store/49f53566-1ff4-47ad-aac9-d999fa85d6f0) or Direct Solana Pay `USDC` |
+| **B2B Custom Module / Pre-Deploy Audit** | **`$149 USDC`** | Custom Python/TS connector (`Kalshi V2` / `PumpSwap v2` / `Morpho`) **OR** Pre-Deploy Foundry/Anchor Invariant Audit with runnable fork tests in `<24h` (free 12h fix or cancel escrow if tests fail) | [WURK Store Escrow (`9f5e5ca6`)](https://wurk.fun/store/9f5e5ca6-0439-4b10-a006-afb82a586ce0) or Direct Solana Pay `USDC` |
+| **Core Operator Suite** | **`$89 USDC`** | Full Kalshi V2 Synoptic & `>=1`-Lot Maker Engine + Pre-Sign Solana/Token-2022 Firewall + Playbook | Instant Solana Pay `USDC` |
+| **VIP Bespoke Codex Bot + Invariant Suite** | **`$399 USDC`** | End-to-end custom execution bot + full stateful Foundry/Anchor invariant test suite + priority engineering integration | Instant Solana Pay `USDC` |
 
 ---
 
@@ -17,7 +32,7 @@ Real unmocked live-API & mainnet terminal audits published on **[Operator Lab (`
 
 ## Why This Exists (Live Empirical Benchmarks)
 
-Most retail trading bots fail on Day 1 because public tutorials ignore live late-2026 venue mechanics verified by this tool:
+Most retail trading bots and payment middlewares fail silently in production because tutorials miss live late-2026 venue and token-program mechanics verified by this tool:
 
 1. **Kalshi V2 Microstructure Traps (`kalshi-scan`):**
    - **Fractional Quote-Dust Mirages:** Top-of-book prints with `< 1.0` contract sizes distort retail spreads (`0.01–0.09` lot dust sitting ticks ahead of real `>= 1.0`-lot depth). `diagnose_cli.py` separates `RawBBO` from `1LotBBO` and measures exact distortion in cents.
@@ -28,7 +43,13 @@ Most retail trading bots fail on Day 1 because public tutorials ignore live late
    - **Signed `i128` `virtual_quote_reserves` (`pump_amm.json`):** Since Pump.fun's `buy_v3` / `Synthetic Migration` rollout, `Pool::virtual_quote_reserves` at offset `245..261` is a **signed 128-bit integer (`i128`)** that goes **negative** when unswept protocol/creator fees sit in the vault, or **positive** on boosted synthetic migrations (`Pool DFBo2bH8...` live mainnet audit: `VaultQuote=3.134330 SOL`, `SignedVQR=+17191831512`, `EffectiveQuote=20.326161 SOL` — a **`+548.50%` quote divergence** vs naive vault-only bots!).
    - **Rug-Shield Scoring (`0..100`):** Flags `NEGATIVE_VIRTUAL_QUOTE_RESERVES_UNSWEPT_FEES`, `MUTABLE_CREATOR_FEE`, `MAYHEM_MODE_ENABLED`, `HIGH_CREATOR_FEE`, `THIN_QUOTE_LIQUIDITY`, and Token-2022 ATA rent requirements (`1,513,840` lamports).
 
-3. **Sovereign Non-Custodial `USDC` Checkout & 6-Rubric Router (`solana_pay_gate.py`):**
+3. **`x402` Payment Payloads, Fail-Open Facilitators & Token-2022 ATA / TLV Traps (`x402-audit`):**
+   - **Caller-Supplied `message` vs Canonical `authorization` Digest Spoofing:** Verifies canonical UTF-8 JSON / SHA-256 digest parity so attackers cannot sign one `payTo`/`value`/`nonce` in `payload.message` while passing a different `authorization`.
+   - **Replay & Expiration Windows:** Rejects missing/expired `validBefore`/`validUntil` bounds, inverted `validAfter..validBefore` windows, `seen_nonces` replay attacks, and recipient/asset/amount mismatches.
+   - **Fail-Open `verifyPayment` & Settlement Defaults:** Flags `strictOnchainVerify=False`, `skipSignatureRecovery=True`, `trustCallerMessage=True`, unawaited background settlements, and accepted failed transaction receipts.
+   - **Token-2022 (`TokenzQd...`) vs Legacy SPL (`Tokenkeg...`) ATA PDA & Offset-166 TLVs:** Computes pure-Python Ed25519 off-curve ATA PDAs for both token programs and parses offset-166 Mint TLVs (`PermanentDelegate`, `TransferHook`, `TransferFeeConfig`, `DefaultAccountState`, `NonTransferable`, `MintCloseAuthority`, `PausableConfig`).
+
+4. **Sovereign Non-Custodial `USDC` Checkout & 6-Rubric Router (`solana_pay_gate.py`):**
    - Generates `0.00%` platform-fee, `0-day` payout-hold **Solana Pay `USDC` URIs** (`EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` -> `4iANuArANM9HzZchytLKeUBzJMws8TEkogtFtZFLGyAj`).
    - Enforces a **5-gate anti-spoof / anti-replay verifier**: `meta.err is None`, fail-closed `blockTime` window (`created_at - 120 <= blockTime <= expires_at`), `reference` key membership (`accountKeys` + `loadedAddresses`), exact `postTokenBalances - preTokenBalances` SPL `USDC` delta (handling new ATA initialization), and `consumed_signatures` lock (`"commitment": "confirmed"`, `"maxSupportedTransactionVersion": 1`).
 
@@ -46,29 +67,24 @@ PYTHONDONTWRITEBYTECODE=1 python3 -B diagnose_cli.py kalshi-scan --series KXHIGH
 # 3. Audit live PumpSwap v2 pools on Solana mainnet (signed i128 VQR + Rug-Shield)
 PYTHONDONTWRITEBYTECODE=1 python3 -B diagnose_cli.py pumpswap-check --latest 3
 
-# 4. Preview non-custodial Solana Pay USDC checkout & System-1/2 router economics
+# 4. Run x402 payment payload, fail-open config & Token-2022 ATA/TLV regression audit
+PYTHONDONTWRITEBYTECODE=1 python3 -B diagnose_cli.py x402-audit
+
+# 5. Live Token-2022 Mint offset-166 TLV & ATA PDA audit (e.g., PYUSD against legacy Tokenkeg...)
+PYTHONDONTWRITEBYTECODE=1 python3 -B diagnose_cli.py x402-audit --mint 2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo --owner 4iANuArANM9HzZchytLKeUBzJMws8TEkogtFtZFLGyAj --token-program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+
+# 6. Preview non-custodial Solana Pay USDC checkout & System-1/2 router economics
 PYTHONDONTWRITEBYTECODE=1 python3 -B solana_pay_gate.py --preview
 ```
 
 ---
 
-## Production Engineering & Custom Build Tiers (Instant `USDC` Settlement)
+## Instant CLI Checkout
 
-Bypass 7–14 day card holds and third-party custody freezes. All paid tiers settle directly in **Solana `USDC`** (`~400ms` finality, `0%` chargebacks) or **WURK Escrow** (`wurk.fun/store` — `solguard_ops`):
-
-| Tier | Price (`USDC`) | What You Receive | Settlement Rail |
-| :--- | :--- | :--- | :--- |
-| **Free Proof Diagnostic** | **`$0`** | Read-only `diagnose_cli.py` + `test_operator_lab.py` (MIT) | Public GitHub |
-| **Core Operator Suite** | **`$89 USDC`** | Full Kalshi V2 Synoptic & `>=1`-Lot Maker Engine + Pre-Sign Solana/Token-2022 Firewall + Playbook | Instant Solana Pay `USDC` |
-| **B2B Custom Module / Pre-Deploy Audit** | **`$149 USDC`** | Custom Python/TS connector (`Kalshi V2` / `PumpSwap v2` / `Morpho`) **OR** Pre-Deploy Foundry/Anchor Invariant Audit delivered with runnable fork tests in `<24h` (fix free within 12h or cancel unapproved WURK escrow if tests fail) | [WURK Store Escrow (`9f5e5ca6`)](https://wurk.fun/store/9f5e5ca6-0439-4b10-a006-afb82a586ce0) or Direct Solana Pay `USDC` |
-| **24-Hour Single-Adapter Bug-Fix PR & CI Test** | **`$349 USDC`** | Targeted production bug-fix PR + runnable regression CI test (`Kalshi V2` / `PumpSwap v2` / `Token-2022` / `x402`) in `<=24h` (free 12h fix or cancel unapproved WURK escrow if tests fail) | [WURK Store Escrow (`de4c3b5b`)](https://wurk.fun/store/de4c3b5b-e617-4304-bcac-3c3436b620ae) or Direct Solana Pay `USDC` |
-| **VIP Bespoke Codex Bot + Invariant Suite** | **`$399 USDC`** | End-to-end custom execution bot + full stateful Foundry/Anchor invariant test suite + priority engineering integration | Instant Solana Pay `USDC` |
-| **48-Hour Production Bug-Fix & Invariant CI Sprint** | **`$1,250 USDC`** | Done-for-you production bot/protocol remediation (Kalshi V2 `DELETE /orders`, PumpSwap `i128` `virtual_quote_reserves`, Token-2022 TLV guard) + runnable stateful invariant CI suite in `<=48h` | [WURK Store Escrow (`49f53566`)](https://wurk.fun/store/49f53566-1ff4-47ad-aac9-d999fa85d6f0) or Direct Solana Pay `USDC` |
-
-Generate an instant checkout URI directly from CLI:
+Generate a `0.00%`-fee Solana Pay `USDC` invoice directly from CLI (`core`, `b2b_audit`, `patch_349`, `vip`, `sprint_1250`):
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 -B solana_pay_gate.py invoice --sku sprint_1250 --buyer-ref github_user
+PYTHONDONTWRITEBYTECODE=1 python3 -B solana_pay_gate.py invoice --sku patch_349 --buyer-ref github_user
 ```
 
 **Merchant Treasury (Public Mainnet Address Only):** `4iANuArANM9HzZchytLKeUBzJMws8TEkogtFtZFLGyAj` (`USDC` SPL Mint `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`).

@@ -7,11 +7,15 @@ import sys
 
 sys.dont_write_bytecode = True
 
+import base64
+import io
+import json
 import os
 import struct
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
 from decimal import Decimal
 from pathlib import Path
 from unittest import mock
@@ -22,16 +26,23 @@ if str(_LAB_DIR) not in sys.path:
 
 from diagnose_cli import (  # noqa: E402
     POOL_DISCRIMINATOR,
+    SPL_TOKEN_PROGRAM_ID,
+    TOKEN_2022_PROGRAM_ID,
     USDC_MINT,
     WSOL_MINT,
     assess_pumpswap_pool,
+    audit_x402_payload_and_config,
     b58decode,
     b58encode,
+    canonicalize_x402_authorization,
     decode_pump_bonding_curve,
     decode_pumpswap_pool,
+    decode_token_mint,
+    derive_associated_token_address,
     evaluate_mecnet_dutch_book,
     extract_bbo_from_orderbook,
     kalshi_v2_taker_fee_dollars,
+    main as diagnose_main,
     parse_metar_observations,
 )
 from solana_pay_gate import (  # noqa: E402
@@ -473,6 +484,186 @@ class TestSolanaPayGate(unittest.TestCase):
             dec = route_customer_message("I want to buy the $149 audit", live=True)
             self.assertEqual(dec.gate_model, "gemini-decision-1")
             m_gem.assert_called_once()
+
+
+class TestX402Audit(unittest.TestCase):
+    def _sample_auth(self, now_ts: int = 1_795_000_000) -> dict[str, object]:
+        return {
+            "from": "0x1111111111111111111111111111111111111111",
+            "payTo": DEFAULT_MERCHANT_WALLET,
+            "asset": USDC_MINT,
+            "value": "349000000",
+            "validAfter": now_ts - 60,
+            "validBefore": now_ts + 900,
+            "nonce": "nonce_valid_001",
+        }
+
+    def test_clean_canonical_x402_payload_and_strict_config_passes(self) -> None:
+        now_ts = 1_795_000_000
+        auth = self._sample_auth(now_ts)
+        canonical_msg, canonical_digest = canonicalize_x402_authorization(auth)
+        rep = audit_x402_payload_and_config(
+            payload={
+                "authorization": auth,
+                "message": canonical_msg,
+                "authorizationDigest": canonical_digest,
+                "signature": "0xdeadbeef",
+            },
+            config={
+                "strictOnchainVerify": True,
+                "requireSignatureRecovery": True,
+                "recomputeCanonicalMessage": True,
+                "awaitSettlement": True,
+                "requireTxSuccess": True,
+            },
+            seen_nonces={"older_nonce_000"},
+            now_ts=now_ts,
+            expected_recipient=DEFAULT_MERCHANT_WALLET,
+            expected_asset=USDC_MINT,
+            min_amount=349_000_000,
+        )
+        self.assertEqual(rep["verdict"], "PASS")
+        self.assertTrue(rep["passed"])
+        self.assertEqual(rep["risk_score"], 0)
+        self.assertEqual(rep["risk_flags"], [])
+
+    def test_rejects_caller_supplied_message_and_digest_spoof(self) -> None:
+        now_ts = 1_795_000_000
+        auth = self._sample_auth(now_ts)
+        spoofed_msg, _ = canonicalize_x402_authorization(
+            {**auth, "payTo": "11111111111111111111111111111111", "value": "1"}
+        )
+        rep = audit_x402_payload_and_config(
+            payload={
+                "decoded": {
+                    "payload": {
+                        "authorization": auth,
+                        "message": spoofed_msg,
+                        "digest": "0x0000",
+                        "signature": "0xspoof",
+                    }
+                }
+            },
+            now_ts=now_ts,
+        )
+        self.assertEqual(rep["verdict"], "BLOCK_CRITICAL")
+        self.assertIn("X402_CALLER_MESSAGE_AUTH_MISMATCH", rep["risk_flags"])
+        self.assertIn("X402_AUTH_DIGEST_MISMATCH", rep["risk_flags"])
+
+    def test_rejects_missing_or_expired_valid_before_and_nonce_replay(self) -> None:
+        now_ts = 1_795_000_000
+        auth_missing = self._sample_auth(now_ts)
+        del auth_missing["validBefore"]
+        del auth_missing["nonce"]
+        rep_missing = audit_x402_payload_and_config(
+            payload={"authorization": auth_missing, "signature": "0xsig"},
+            now_ts=now_ts,
+        )
+        self.assertIn("X402_MISSING_EXPIRATION_BOUND", rep_missing["risk_flags"])
+        self.assertIn("X402_MISSING_REPLAY_NONCE", rep_missing["risk_flags"])
+
+        auth_exp = {**self._sample_auth(now_ts), "validBefore": now_ts - 5, "nonce": "reused_nonce_77"}
+        rep_exp = audit_x402_payload_and_config(
+            payload={"authorization": auth_exp, "signature": "0xsig"},
+            seen_nonces={"reused_nonce_77"},
+            now_ts=now_ts,
+        )
+        self.assertEqual(rep_exp["verdict"], "BLOCK_CRITICAL")
+        self.assertIn("X402_EXPIRED_AUTHORIZATION", rep_exp["risk_flags"])
+        self.assertIn("X402_NONCE_REPLAY_DETECTED", rep_exp["risk_flags"])
+
+    def test_rejects_fail_open_verify_payment_defaults_and_failed_receipt(self) -> None:
+        now_ts = 1_795_000_000
+        rep = audit_x402_payload_and_config(
+            payload={"authorization": self._sample_auth(now_ts), "signature": "0xsig", "txStatus": "failed"},
+            config={
+                "failOpen": True,
+                "strictOnchainVerify": False,
+                "skipSignatureRecovery": True,
+                "trustCallerMessage": True,
+                "awaitSettlement": False,
+                "allowFailedTx": True,
+            },
+            now_ts=now_ts,
+        )
+        self.assertEqual(rep["verdict"], "BLOCK_CRITICAL")
+        for expected_code in (
+            "X402_FAIL_OPEN_VERIFY_DEFAULT",
+            "X402_SIGNATURE_RECOVERY_SKIPPED",
+            "X402_UNTRUSTED_CALLER_MESSAGE_ACCEPTED",
+            "X402_UNAWAITED_BACKGROUND_SETTLEMENT",
+            "X402_FAIL_OPEN_FAILED_TX_RECEIPT",
+            "X402_FAILED_TX_ACCEPTED",
+        ):
+            self.assertIn(expected_code, rep["risk_flags"])
+
+    def test_token_2022_ata_pda_derivation_and_program_mismatch(self) -> None:
+        usdc_ata = derive_associated_token_address(DEFAULT_MERCHANT_WALLET, USDC_MINT, SPL_TOKEN_PROGRAM_ID)
+        self.assertEqual(usdc_ata, "DiJL3ws9YBNGVBq6kSKqrcrimjqm7eA5vNQsYdhybPT5")
+
+        pyusd_mint = "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"
+        legacy_pyusd_ata = derive_associated_token_address(DEFAULT_MERCHANT_WALLET, pyusd_mint, SPL_TOKEN_PROGRAM_ID)
+        t22_pyusd_ata = derive_associated_token_address(DEFAULT_MERCHANT_WALLET, pyusd_mint, TOKEN_2022_PROGRAM_ID)
+        self.assertNotEqual(legacy_pyusd_ata, t22_pyusd_ata)
+
+        rep = audit_x402_payload_and_config(
+            mint_owner_program=TOKEN_2022_PROGRAM_ID,
+            expected_asset=pyusd_mint,
+            owner_pubkey=DEFAULT_MERCHANT_WALLET,
+            destination_ata=legacy_pyusd_ata,
+            configured_token_program=SPL_TOKEN_PROGRAM_ID,
+        )
+        self.assertEqual(rep["verdict"], "BLOCK_CRITICAL")
+        self.assertIn("TOKEN_2022_PROGRAM_ID_HARDCODED_LEGACY_SPL", rep["risk_flags"])
+        self.assertIn("TOKEN_2022_ATA_PDA_MISMATCH", rep["risk_flags"])
+        self.assertEqual(rep["derived_atas"]["token_2022_ata"], t22_pyusd_ata)
+
+    def test_token_2022_offset166_tlv_decoder_and_cli_strict_exit(self) -> None:
+        mint = bytearray(166)
+        mint[44] = 6
+        mint[45] = 1
+        mint[165] = 1
+        delegate = b58decode(DEFAULT_MERCHANT_WALLET, 32)
+        hook_prog = b"\x05" * 32
+        fee_tlv = bytearray(108)
+        struct.pack_into("<Q", fee_tlv, 98, 5_000_000)
+        struct.pack_into("<H", fee_tlv, 106, 250)
+
+        mint.extend(struct.pack("<HH", 12, 32) + delegate)
+        mint.extend(struct.pack("<HH", 14, 64) + (b"\x04" * 32) + hook_prog)
+        mint.extend(struct.pack("<HH", 1, 108) + fee_tlv)
+        mint.extend(struct.pack("<HH", 26, 32) + (b"\x07" * 32))
+
+        decoded = decode_token_mint(bytes(mint), owner_program=TOKEN_2022_PROGRAM_ID, mint_pubkey=USDC_MINT)
+        self.assertEqual(decoded["permanent_delegate"], DEFAULT_MERCHANT_WALLET)
+        self.assertEqual(decoded["transfer_hook_program_id"], b58encode(hook_prog))
+        self.assertEqual(decoded["transfer_fee_bps"], 250)
+        self.assertIn("TOKEN_2022_PERMANENT_DELEGATE", decoded["risk_flags"])
+        self.assertIn("TOKEN_2022_TRANSFER_HOOK", decoded["risk_flags"])
+        self.assertIn("TOKEN_2022_TRANSFER_FEE_250_BPS", decoded["risk_flags"])
+        self.assertIn("TOKEN_2022_PAUSABLE", decoded["risk_flags"])
+
+        buf_out = io.StringIO()
+        with redirect_stdout(buf_out):
+            rc = diagnose_main([
+                "x402-audit",
+                "--mint-b64",
+                base64.b64encode(bytes(mint)).decode("ascii"),
+                "--strict-exit",
+                "--json",
+            ])
+        self.assertEqual(rc, 2)
+        parsed = json.loads(buf_out.getvalue())
+        self.assertEqual(parsed["mode"], "targeted")
+        self.assertIn("TOKEN_2022_PERMANENT_DELEGATE", parsed["audit"]["risk_flags"])
+
+        self_out = io.StringIO()
+        with redirect_stdout(self_out):
+            rc_self = diagnose_main(["x402-audit", "--json"])
+        self.assertEqual(rc_self, 0)
+        self_rep = json.loads(self_out.getvalue())
+        self.assertEqual(self_rep["vectors_tested"], 5)
+        self.assertEqual(self_rep["critical_vectors_caught"], 4)
 
 
 if __name__ == "__main__":
