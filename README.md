@@ -62,11 +62,12 @@ Bypass 7–14 day card holds and third-party custody freezes. All paid tiers set
 | **Core Operator Suite** | **`$89 USDC`** | Full Kalshi V2 Synoptic & `>=1`-Lot Maker Engine + Pre-Sign Solana/Token-2022 Firewall + Playbook | Instant Solana Pay `USDC` |
 | **B2B Custom Module / Pre-Deploy Audit** | **`$149 USDC`** | Custom Python/TS connector (`Kalshi V2` / `PumpSwap v2` / `Morpho`) **OR** Pre-Deploy Foundry/Anchor Invariant Audit delivered with runnable fork tests in `<24h` (fix free within 12h or cancel unapproved WURK escrow if tests fail) | [WURK Store Escrow (`9f5e5ca6`)](https://wurk.fun/store/9f5e5ca6-0439-4b10-a006-afb82a586ce0) or Direct Solana Pay `USDC` |
 | **VIP Bespoke Codex Bot + Invariant Suite** | **`$399 USDC`** | End-to-end custom execution bot + full stateful Foundry/Anchor invariant test suite + priority engineering integration | Instant Solana Pay `USDC` |
+| **48-Hour Production Bug-Fix & Invariant CI Sprint** | **`$1,250 USDC`** | Done-for-you production bot/protocol remediation (Kalshi V2 `DELETE /orders`, PumpSwap `i128` `virtual_quote_reserves`, Token-2022 TLV guard) + runnable stateful invariant CI suite in `<=48h` | [WURK Store Escrow (`49f53566`)](https://wurk.fun/store/49f53566-1ff4-47ad-aac9-d999fa85d6f0) or Direct Solana Pay `USDC` |
 
 Generate an instant checkout URI directly from CLI:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 -B solana_pay_gate.py invoice --sku b2b_audit --buyer-ref github_user
+PYTHONDONTWRITEBYTECODE=1 python3 -B solana_pay_gate.py invoice --sku sprint_1250 --buyer-ref github_user
 ```
 
 **Merchant Treasury (Public Mainnet Address Only):** `4iANuArANM9HzZchytLKeUBzJMws8TEkogtFtZFLGyAj` (`USDC` SPL Mint `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`).

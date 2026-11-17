@@ -38,6 +38,7 @@ from solana_pay_gate import (  # noqa: E402
     DEFAULT_MERCHANT_WALLET,
     PUBLIC_REPO_URL,
     WURK_ESCROW_URL,
+    WURK_SPRINT_1250_URL,
     _build_gemini_decision_payload,
     _build_openai_decision_payload,
     _load_runtime_api_keys,
@@ -331,7 +332,15 @@ class TestSolanaPayGate(unittest.TestCase):
         self.assertGreater(ue["users_per_200_usd_credit"], 1500)
 
         prev = run_preview()
-        self.assertEqual(len(prev["sample_invoices"]), 3)
+        self.assertEqual(len(prev["sample_invoices"]), 4)
+
+        sprint = route_customer_message(
+            "Ready to buy the $1250 48-hour remediation CI sprint right now", live=False
+        )
+        self.assertEqual(sprint.tier_fit, "sprint_1250")
+        self.assertEqual(sprint.action, "ISSUE_SOLANA_PAY_INVOICE:sprint_1250")
+        self.assertIn("amount=1250", sprint.invoice_uri or "")
+        self.assertIn(WURK_SPRINT_1250_URL, sprint.reply_template)
 
     def test_dual_decision_gates_and_grounded_prompt(self) -> None:
         g_payload = _build_gemini_decision_payload("Ready for $149 audit")
@@ -403,7 +412,9 @@ class TestSolanaPayGate(unittest.TestCase):
         self.assertIn("$89.00", prompt)
         self.assertIn("$149.00", prompt)
         self.assertIn("$399.00", prompt)
+        self.assertIn("$1,250.00", prompt)
         self.assertIn(WURK_ESCROW_URL, prompt)
+        self.assertIn(WURK_SPRINT_1250_URL, prompt)
         self.assertIn(PUBLIC_REPO_URL, prompt)
         self.assertIn(inv["solana_pay_uri"], prompt)
 
