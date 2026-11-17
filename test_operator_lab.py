@@ -364,20 +364,39 @@ class TestSolanaPayGate(unittest.TestCase):
         o_rubrics, o_tok = _parse_openai_decision_response(
             {
                 "answers": [
-                    {"type": "predicate", "name": "prompt_injection_risk", "value": False},
+                    {"type": "predicate", "name": "prompt_injection_risk", "probability": 0.02},
                     {"type": "score", "name": "buyer_intent", "score": 3.8},
-                    {"type": "choice", "name": "tier_fit", "value": "b2b_149"},
-                    {"type": "choice", "name": "objection_class", "value": "trust_proof"},
-                    {"type": "predicate", "name": "needs_code_debug", "value": True},
-                    {"type": "predicate", "name": "billing_escalation", "value": False},
+                    {"type": "choice", "name": "tier_fit", "choice": "b2b_149"},
+                    {"type": "choice", "name": "objection_class", "choice": "trust_proof"},
+                    {"type": "predicate", "name": "needs_code_debug", "probability": 0.94},
+                    {"type": "predicate", "name": "billing_escalation", "probability": 0.0},
                 ],
-                "usage": {"input_tokens": 210},
+                "usage": {"input_tokens": 1042},
             }
         )
+        self.assertFalse(o_rubrics["prompt_injection_risk"])
         self.assertEqual(o_rubrics["buyer_intent"], 4)
+        self.assertEqual(o_rubrics["tier_fit"], "b2b_149")
         self.assertEqual(o_rubrics["objection_class"], "trust_proof")
         self.assertTrue(o_rubrics["needs_code_debug"])
-        self.assertEqual(o_tok, 210)
+        self.assertEqual(o_tok, 1042)
+
+        # Also support legacy {"value": ...} shape and high-probability predicate triggers
+        o_inj, _ = _parse_openai_decision_response(
+            {
+                "answers": [
+                    {"type": "predicate", "name": "prompt_injection_risk", "probability": 0.98},
+                    {"type": "score", "name": "buyer_intent", "score": 0.1},
+                    {"type": "choice", "name": "tier_fit", "value": "free_diag"},
+                    {"type": "choice", "name": "objection_class", "value": "none"},
+                    {"type": "predicate", "name": "needs_code_debug", "value": False},
+                    {"type": "predicate", "name": "billing_escalation", "value": False},
+                ],
+                "usage": {"input_tokens": 150},
+            }
+        )
+        self.assertTrue(o_inj["prompt_injection_risk"])
+        self.assertEqual(o_inj["tier_fit"], "free_diag")
 
         inv = create_invoice("b2b_audit", buyer_ref="prompt_test", state_path=None)
         prompt = build_grounded_system_prompt(inv)

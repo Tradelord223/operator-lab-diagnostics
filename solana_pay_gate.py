@@ -494,16 +494,21 @@ def _parse_openai_decision_response(data: dict[str, Any]) -> tuple[dict[str, Any
     in_tok = int(usage.get("input_tokens") or usage.get("prompt_tokens") or usage.get("total_tokens") or 0)
 
     def _pred(name: str) -> bool:
-        val = (by_name.get(name) or {}).get("value")
+        item = by_name.get(name) or {}
+        val = item.get("probability") if item.get("probability") is not None else item.get("value")
         return bool(val) if isinstance(val, bool) else float(val or 0.0) >= 0.5
+
+    def _choice(name: str, default: str) -> str:
+        item = by_name.get(name) or {}
+        return str(item.get("choice") or item.get("value") or default)
 
     score_item = by_name.get("buyer_intent") or {}
     raw_score = score_item.get("score") if score_item.get("score") is not None else score_item.get("value", 1)
     rubrics = {
         "prompt_injection_risk": _pred("prompt_injection_risk"),
         "buyer_intent": _round_score(raw_score),
-        "tier_fit": str((by_name.get("tier_fit") or {}).get("value") or "free_diag"),
-        "objection_class": str((by_name.get("objection_class") or {}).get("value") or "none"),
+        "tier_fit": _choice("tier_fit", "free_diag"),
+        "objection_class": _choice("objection_class", "none"),
         "needs_code_debug": _pred("needs_code_debug"),
         "billing_escalation": _pred("billing_escalation"),
     }
