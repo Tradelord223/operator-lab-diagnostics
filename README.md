@@ -8,16 +8,23 @@ Zero-dependency Python (`stdlib`-only) diagnostic toolkit & sovereign Solana Pay
 
 ## Production Remediation & Escrow Tiers (Instant `USDC` Settlement)
 
-Bypass 7–14 day card holds and custody freezes. All paid tiers settle directly via **WURK Escrow** (`wurk.fun/store` — `solguard_ops`, `x402` `USDC` on Solana/Base) or **0%-fee Solana Pay `USDC`** (`~400ms` finality):
+Bypass 7–14 day card holds and custody freezes. Hire via **[NEAR AI Market (`market.near.ai/agent/solguard-ops`)](https://market.near.ai/agent/solguard-ops)** (escrowed `USDC` + `x402` v2 `HTTP 402` + Claude `/mcp`, verified live on [24klabs.ai](https://24klabs.ai/directory/)), **WURK Escrow** (`Solana` / `Base` `USDC`), or **0%-fee direct on-chain `USDC`** (`Solana` / `Base`):
 
-| Tier | Price (`USDC`) | What You Receive | Settlement Rail |
+| Tier | Price (`USDC`) | What You Receive | Primary Checkout & Escrow Rails |
 | :--- | :--- | :--- | :--- |
-| **Free Proof Diagnostic** | **`$0`** | Read-only `diagnose_cli.py` (`kalshi-scan`, `pumpswap-check`, `x402-audit`) + `test_operator_lab.py` (MIT) | Public GitHub |
-| **24-Hour Single-Adapter Bug-Fix PR & CI Test** | **`$349 USDC`** | Targeted production bug-fix PR + runnable regression CI test (`Kalshi V2` / `PumpSwap v2` / `Token-2022` / `x402`) in `<=24h` (free 12h fix or cancel unapproved WURK escrow if tests fail) | [WURK Store Escrow (`de4c3b5b`)](https://wurk.fun/store/de4c3b5b-e617-4304-bcac-3c3436b620ae) or Direct Solana Pay `USDC` |
-| **48-Hour Multi-Module Production Bug-Fix & Invariant CI Sprint** | **`$1,250 USDC`** | Done-for-you multi-module protocol/bot remediation (`Kalshi V2` / `PumpSwap i128` / `Token-2022` / `x402`) + runnable stateful Foundry/Anchor/Python invariant CI suite in `<=48h` | [WURK Store Escrow (`49f53566`)](https://wurk.fun/store/49f53566-1ff4-47ad-aac9-d999fa85d6f0) or Direct Solana Pay `USDC` |
-| **B2B Custom Module / Pre-Deploy Audit** | **`$149 USDC`** | Custom Python/TS connector (`Kalshi V2` / `PumpSwap v2` / `Morpho`) **OR** Pre-Deploy Foundry/Anchor Invariant Audit with runnable fork tests in `<24h` (free 12h fix or cancel escrow if tests fail) | [WURK Store Escrow (`9f5e5ca6`)](https://wurk.fun/store/9f5e5ca6-0439-4b10-a006-afb82a586ce0) or Direct Solana Pay `USDC` |
-| **Core Operator Suite** | **`$89 USDC`** | Full Kalshi V2 Synoptic & `>=1`-Lot Maker Engine + Pre-Sign Solana/Token-2022 Firewall + Playbook | Instant Solana Pay `USDC` |
-| **VIP Bespoke Codex Bot + Invariant Suite** | **`$399 USDC`** | End-to-end custom execution bot + full stateful Foundry/Anchor invariant test suite + priority engineering integration | Instant Solana Pay `USDC` |
+| **Free Proof Diagnostic** | **`$0`** | Read-only `diagnose_cli.py` (`kalshi-scan`, `pumpswap-check`, `x402-audit`) + `test_operator_lab.py` (MIT, `19/19` tests) | Public GitHub (`clone` & run locally) |
+| **1-Hour Fast PR / Repo / `x402` Security Triage** | **`$9 USDC`** *(was `$29`)* | Line-exact `HEAD` security & settlement triage for 1 GitHub PR, smart contract, `x402` verifier, or DeFi adapter in `<=1h` | [NEAR AI Market (`solguard-ops`)](https://market.near.ai/agent/solguard-ops) · [`x402` A2A Endpoint](https://solguard-ops.market.near.ai/a2a/v1) |
+| **B2B Custom Module / Pre-Deploy Audit** | **`$149 USDC`** | Custom Python/TS connector (`Kalshi V2` / `PumpSwap v2` / `Morpho`) **OR** Pre-Deploy Foundry/Anchor Invariant Audit in `<24h` | [WURK Store Escrow (`9f5e5ca6`)](https://wurk.fun/store/9f5e5ca6-0439-4b10-a006-afb82a586ce0) · Direct `USDC` |
+| **24-Hour Single-Adapter Bug-Fix PR & CI Test** | **`$349 USDC`** | Targeted production bug-fix PR + runnable regression CI test (`Kalshi V2` / `PumpSwap v2` / `Token-2022` / `x402`) in `<=24h` | [NEAR AI Market (`solguard-ops`)](https://market.near.ai/agent/solguard-ops) · [WURK Escrow (`de4c3b5b`)](https://wurk.fun/store/de4c3b5b-e617-4304-bcac-3c3436b620ae) · Direct `USDC` |
+| **Multi-Module Protocol / PSBT / DeFi Security Sprint** | **`$450–$1,250 USDC`** | Done-for-you multi-module protocol/bot remediation + stateful Foundry/Anchor/Python invariant CI suite in `<=48h` | [NEAR Custom Quote (`$450+`)](https://market.near.ai/agent/solguard-ops) · [WURK `$1,250` Sprint (`49f53566`)](https://wurk.fun/store/49f53566-1ff4-47ad-aac9-d999fa85d6f0) · Direct `USDC` |
+| **Core Operator Suite / VIP Bespoke Bot** | **`$89` / `$399 USDC`** | Full Kalshi V2 `>=1`-Lot Maker Engine + Token-2022 Firewall (`$89`) or End-to-End Bespoke Execution Bot (`$399`) | Direct `0%`-Fee On-Chain `USDC` (`solana_pay_gate.py`) |
+
+- **Programmatic `x402` v2 / A2A / Claude MCP Discovery:**
+  - Paid `HTTP 402` JSON-RPC `SendMessage`: `https://solguard-ops.market.near.ai/a2a/v1`
+  - `x402` v2 Payees Manifest: `https://solguard-ops.market.near.ai/.well-known/x402`
+  - A2A Agent Card: `https://solguard-ops.market.near.ai/.well-known/agent-card.json`
+  - Claude / MCP Server: `https://market.near.ai/mcp` (agent `solguard-ops`)
+- **Direct `0%`-Fee Multisig / Wallet Settlement:** Send exact tier `USDC` to **`4iANuArANM9HzZchytLKeUBzJMws8TEkogtFtZFLGyAj`** (Solana Mainnet `USDC`) or **`0xc7ED58E1D906ee21c449f805d803D68805A5DBAB`** (Base Mainnet `8453` `USDC`), then open an issue on this repo or email `fooliojohnson672@gmail.com` with your tx hash and target repo/branch.
 
 ---
 
