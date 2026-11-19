@@ -344,7 +344,7 @@ class TestSolanaPayGate(unittest.TestCase):
         self.assertGreater(ue["users_per_200_usd_credit"], 1500)
 
         prev = run_preview()
-        self.assertEqual(len(prev["sample_invoices"]), 5)
+        self.assertEqual(len(prev["sample_invoices"]), 6)
 
         patch = route_customer_message(
             "Ready to buy the $349 single-adapter bug-fix PR right now", live=False
@@ -664,6 +664,13 @@ class TestX402Audit(unittest.TestCase):
         self_rep = json.loads(self_out.getvalue())
         self.assertEqual(self_rep["vectors_tested"], 5)
         self.assertEqual(self_rep["critical_vectors_caught"], 4)
+
+    def test_triage_9_sku_invoice_generation(self) -> None:
+        inv = create_invoice("triage_9", buyer_ref="x402_team", state_path=None)
+        self.assertEqual(inv["sku"], "triage_9")
+        self.assertEqual(inv["price_usdc"], "9.00")
+        self.assertEqual(inv["expected_micro_usdc"], 9_000_000)
+        self.assertIn("amount=9&spl-token=", inv["solana_pay_uri"])
 
 
 if __name__ == "__main__":

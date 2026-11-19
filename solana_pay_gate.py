@@ -49,6 +49,12 @@ USDC_DECIMALS = 6
 MICRO_USDC_SCALE = 10**USDC_DECIMALS
 
 SKUS: dict[str, dict[str, Any]] = {
+    "triage_9": {
+        "sku": "triage_9",
+        "title": "1-Hour Private Root-Cause File:Line Triage & Repro PoC",
+        "price_usdc": "9.00",
+        "expected_micro_usdc": 9_000_000,
+    },
     "core": {
         "sku": "core",
         "title": "Core Operator Suite",
@@ -855,7 +861,7 @@ def run_preview() -> dict[str, Any]:
     """Non-mutating preview for terminal demonstrations and verification."""
     samples = [
         create_invoice(sku, buyer_ref="demo", state_path=None)
-        for sku in ("core", "b2b_audit", "patch_349", "vip", "sprint_1250")
+        for sku in ("triage_9", "core", "b2b_audit", "patch_349", "vip", "sprint_1250")
     ]
     route_demo = route_customer_message(
         "I want to buy the $149 pre-deploy audit; do you take USDC without Stripe 14-day holds?",
